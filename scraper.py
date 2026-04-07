@@ -12,6 +12,7 @@ import json
 import re
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 from playwright.async_api import async_playwright
@@ -22,6 +23,7 @@ URL_BOTS = "https://www.binance.com/es-LA/trading-bots"
 WAIT_PAGE_LOAD = 8        # segundos para espera inicial
 WAIT_BETWEEN_CLICKS = 3   # segundos entre clic en cada bot
 HEADLESS = True            # True para oculto, False para ver el navegador
+HISTORIAL_CSV = Path(__file__).parent / "historial_bots.csv"
 
 
 def parse_args():
@@ -49,6 +51,10 @@ def parse_args():
     parser.add_argument(
         "--paginas-max", type=int, default=50,
         help="Máximo de páginas a recorrer (incluye la página actual). Ej: 50"
+    )
+    parser.add_argument(
+        "--solo-cambios", action="store_true",
+        help="Mostrar solo bots cuyo número de copias haya cambiado respecto al snapshot anterior"
     )
     return parser.parse_args()
 
@@ -866,7 +872,7 @@ def mostrar_resultados(df: pd.DataFrame, titulo: str = ""):
         return
 
     # Columnas visibles en orden fijo, strategy_id primero
-    columnas_orden = ["strategy_id", "par", "direccion", "roi", "pnl", "duracion", "inversion_min", "copias"]
+    columnas_orden = ["strategy_id", "par", "direccion", "roi", "pnl", "duracion", "inversion_min", "copias", "Δ copias"]
     cols_visibles = [c for c in columnas_orden if c in df.columns]
 
     df_mostrar = df[cols_visibles] if cols_visibles else df
@@ -880,6 +886,69 @@ def mostrar_resultados(df: pd.DataFrame, titulo: str = ""):
 
     print(tabulate(df_mostrar, headers="keys", tablefmt="fancy_grid", showindex=False))
     print()
+
+
+def cargar_snapshot_anterior(path: Path) -> pd.DataFrame:
+    """Carga el último snapshot guardado en el CSV histórico."""
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(path, dtype={"strategy_id": str})
+        if "timestamp" in df.columns:
+            df = df.sort_values("timestamp").groupby("strategy_id", as_index=False).last()
+        return df
+    except Exception as e:
+        print(f"⚠️  No se pudo cargar historial: {e}")
+        return pd.DataFrame()
+
+
+def guardar_snapshot(df: pd.DataFrame, path: Path):
+    """Guarda el snapshot actual en el CSV histórico (append)."""
+    if df.empty:
+        return
+    df_guardar = df.copy()
+    df_guardar["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df_guardar = df_guardar.drop(columns=["Δ copias"], errors="ignore")
+    escribir_header = not path.exists()
+    df_guardar.to_csv(path, mode="a", index=False, header=escribir_header)
+    print(f"💾 Snapshot guardado en {path.name} ({len(df_guardar)} bots, {df_guardar['timestamp'].iloc[0]})")
+
+
+def calcular_delta_copias(df_actual: pd.DataFrame, df_anterior: pd.DataFrame) -> pd.DataFrame:
+    """Agrega columna 'Δ copias' comparando con el snapshot anterior."""
+    df = df_actual.copy()
+    df["strategy_id"] = df["strategy_id"].astype(str)
+
+    if df_anterior.empty or "copias" not in df_anterior.columns:
+        df["Δ copias"] = "nuevo"
+        return df
+
+    df_anterior = df_anterior[["strategy_id", "copias"]].copy()
+    df_anterior["strategy_id"] = df_anterior["strategy_id"].astype(str)
+    df_anterior = df_anterior.rename(columns={"copias": "_copias_ant"})
+
+    df = df.merge(df_anterior, on="strategy_id", how="left")
+
+    def _calcular(row):
+        try:
+            actual = int(float(str(row["copias"]).replace(",", "").strip()))
+            anterior = row["_copias_ant"]
+            if pd.isna(anterior):
+                return "nuevo"
+            anterior = int(float(str(anterior).replace(",", "").strip()))
+            delta = actual - anterior
+            if delta > 0:
+                return f"+{delta}"
+            elif delta < 0:
+                return str(delta)
+            else:
+                return "0"
+        except Exception:
+            return ""
+
+    df["Δ copias"] = df.apply(_calcular, axis=1)
+    df = df.drop(columns=["_copias_ant"], errors="ignore")
+    return df
 
 
 async def main():
@@ -898,6 +967,8 @@ async def main():
         print(f"   Filtro copias mín: ≥ {args.copias_min}")
     if args.copias_max is not None:
         print(f"   Filtro copias máx: ≤ {args.copias_max}")
+    if args.solo_cambios:
+        print("   Mostrando: solo bots con cambios en copias")
     print()
 
     respuestas_api = []
@@ -960,7 +1031,21 @@ async def main():
         df_api = filtrar_resultados(df_api, args)
 
         if not df_api.empty:
-            mostrar_resultados(df_api, "📊 MERCADO DE BOTS — GRID DE FUTUROS (1-7 días)")
+            # Paso 8: Comparar con historial y calcular delta de copias
+            df_anterior = cargar_snapshot_anterior(HISTORIAL_CSV)
+            df_api = calcular_delta_copias(df_api, df_anterior)
+
+            # Paso 9: Guardar snapshot actual
+            guardar_snapshot(df_api, HISTORIAL_CSV)
+
+            # Paso 10: Filtrar solo cambios si se solicitó
+            if args.solo_cambios:
+                df_mostrar = df_api[df_api["Δ copias"].astype(str).ne("0") & df_api["Δ copias"].astype(str).ne("")]
+                print(f"🔍 Filtro --solo-cambios: {len(df_mostrar)} bots con cambios en copias")
+            else:
+                df_mostrar = df_api
+
+            mostrar_resultados(df_mostrar, "📊 MERCADO DE BOTS — GRID DE FUTUROS (1-7 días)")
         else:
             print("⚠️  No se capturaron datos de la API")
 
