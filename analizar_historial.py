@@ -11,9 +11,6 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import gspread
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google.auth.oauthlib.flow import InstalledAppFlow
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
 # ── Configuración ──────────────────────────────────────────────
