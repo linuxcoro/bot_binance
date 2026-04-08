@@ -11,7 +11,10 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google.auth.oauthlib.flow import InstalledAppFlow
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
 # ── Configuración ──────────────────────────────────────────────
 DATA_DIR = Path(__file__).parent / "data"
@@ -106,7 +109,7 @@ def analizar_evoluciones(df: pd.DataFrame) -> pd.DataFrame:
 
 def conectar_google_sheets(nombre_hoja: str) -> tuple:
     """
-    Se conecta a Google Sheets usando credenciales de servicio.
+    Se conecta a Google Sheets usando credenciales de servicio (service account).
     Retorna (gc, worksheet) o (None, None) si falla.
     """
     if not CREDENTIALS_JSON.exists():
@@ -114,7 +117,7 @@ def conectar_google_sheets(nombre_hoja: str) -> tuple:
         return None, None
     
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
+        creds = ServiceAccountCredentials.from_service_account_file(
             str(CREDENTIALS_JSON),
             scopes=SCOPES
         )
