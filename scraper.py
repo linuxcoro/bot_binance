@@ -961,8 +961,8 @@ async def main():
         await cambiar_a_vista_lista(page)
 
         # Paso 4: Scroll ligero para asegurar carga inicial
-            await page.evaluate("window.scrollBy(0, 700)")
-            await page.wait_for_timeout(700)
+        await page.evaluate("window.scrollBy(0, 700)")
+        await page.wait_for_timeout(700)
 
         print(f"📡 Respuestas API capturadas tras scroll: {len(respuestas_api)}")
 
