@@ -10,6 +10,9 @@ import argparse
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import os
+import urllib.parse
+import urllib.request
 import gspread
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
@@ -23,6 +26,104 @@ SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
 ]
+
+
+def seleccionar_mejores_bots(
+    df_analisis: pd.DataFrame,
+    min_copias: int = 20,
+    min_dias: int = 3,
+    top_n: int = 5,
+) -> pd.DataFrame:
+    """Selecciona mejores bots usando score combinado de popularidad y crecimiento."""
+    if df_analisis.empty:
+        return pd.DataFrame()
+
+    df = df_analisis.copy()
+    df["copias_final"] = pd.to_numeric(df["copias_final"], errors="coerce").fillna(0)
+    df["variacion_copias"] = pd.to_numeric(df["variacion_copias"], errors="coerce").fillna(0)
+    df["dias_registrados"] = pd.to_numeric(df["dias_registrados"], errors="coerce").fillna(0)
+
+    crecimiento = df[
+        (df["estado"] == "CRECIMIENTO")
+        & (df["copias_final"] >= min_copias)
+        & (df["dias_registrados"] >= min_dias)
+    ].copy()
+
+    if crecimiento.empty:
+        # Fallback para etapas tempranas: priorizar NUEVO con más copias
+        crecimiento = df[df["estado"].isin(["NUEVO", "ESTABLE", "CRECIMIENTO"])].copy()
+
+    if crecimiento.empty:
+        return pd.DataFrame()
+
+    max_copias = max(crecimiento["copias_final"].max(), 1)
+    max_var = max(crecimiento["variacion_copias"].clip(lower=0).max(), 1)
+
+    crecimiento["score_popularidad"] = crecimiento["copias_final"] / max_copias
+    crecimiento["score_crecimiento"] = crecimiento["variacion_copias"].clip(lower=0) / max_var
+    crecimiento["score_total"] = (0.6 * crecimiento["score_popularidad"] + 0.4 * crecimiento["score_crecimiento"]).round(4)
+
+    columnas = [
+        "strategy_id", "par", "estado", "copias_final",
+        "variacion_copias", "porcentaje_variacion", "dias_registrados", "score_total"
+    ]
+    return crecimiento.sort_values(["score_total", "copias_final"], ascending=False)[columnas].head(top_n)
+
+
+def enviar_telegram(mensaje: str, bot_token: str, chat_id: str) -> bool:
+    """Envía un mensaje a Telegram usando la API Bot."""
+    if not bot_token or not chat_id:
+        print("⚠️  Telegram no configurado (faltan token/chat_id)")
+        return False
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": mensaje,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    try:
+        data = urllib.parse.urlencode(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            ok = resp.status == 200
+        if ok:
+            print("✅ Mensaje enviado a Telegram")
+            return True
+        print("❌ Telegram respondió con estado no exitoso")
+        return False
+    except Exception as e:
+        print(f"❌ Error enviando Telegram: {e}")
+        return False
+
+
+def construir_mensaje_mejores_bots(df_top: pd.DataFrame) -> str:
+    """Construye el mensaje de recomendación para Telegram."""
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if df_top.empty:
+        return (
+            f"📊 <b>Bot Binance - Selección</b>\n"
+            f"🕒 {fecha}\n\n"
+            f"No hay bots que cumplan los criterios en este ciclo."
+        )
+
+    lineas = [
+        "📊 <b>Bot Binance - Mejores Bots</b>",
+        f"🕒 {fecha}",
+        "",
+    ]
+
+    for i, (_, row) in enumerate(df_top.iterrows(), start=1):
+        lineas.append(
+            f"{i}. <b>{row['par']}</b> | ID: <code>{row['strategy_id']}</code>\n"
+            f"   Estado: {row['estado']} | Copias: {int(row['copias_final'])}\n"
+            f"   Δ Copias: {int(row['variacion_copias'])} | Score: {row['score_total']:.3f}"
+        )
+
+    return "\n".join(lineas)
 
 
 def cargar_historial() -> pd.DataFrame:
@@ -247,6 +348,22 @@ def main():
         "--spreadsheet-id", type=str, default=None,
         help="ID de una hoja existente de Google Sheets ya compartida con la cuenta de servicio"
     )
+    parser.add_argument(
+        "--telegram", action="store_true",
+        help="Enviar selección de mejores bots por Telegram"
+    )
+    parser.add_argument(
+        "--telegram-token", type=str, default=None,
+        help="Token del bot de Telegram (si no se envía, usa TELEGRAM_BOT_TOKEN)"
+    )
+    parser.add_argument(
+        "--telegram-chat-id", type=str, default=None,
+        help="Chat ID de Telegram (si no se envía, usa TELEGRAM_CHAT_ID)"
+    )
+    parser.add_argument(
+        "--top-n", type=int, default=5,
+        help="Cantidad de bots a seleccionar para enviar por Telegram"
+    )
     
     args = parser.parse_args()
     
@@ -274,6 +391,14 @@ def main():
     # Exportar a Google Sheets si se solicita
     if args.google_sheets:
         exportar_a_google_sheets(df_analisis, args.nombre_hoja, args.spreadsheet_id)
+
+    # Selección y envío por Telegram
+    if args.telegram:
+        df_top = seleccionar_mejores_bots(df_analisis, top_n=args.top_n)
+        mensaje = construir_mensaje_mejores_bots(df_top)
+        token = args.telegram_token or os.getenv("TELEGRAM_BOT_TOKEN", "")
+        chat_id = args.telegram_chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
+        enviar_telegram(mensaje, token, chat_id)
     
     print("✅ Análisis completado")
 
