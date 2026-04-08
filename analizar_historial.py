@@ -104,7 +104,7 @@ def analizar_evoluciones(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(analisis)
 
 
-def conectar_google_sheets(nombre_hoja: str) -> tuple:
+def conectar_google_sheets(nombre_hoja: str, spreadsheet_id: str | None = None) -> tuple:
     """
     Se conecta a Google Sheets usando credenciales de servicio (service account).
     Retorna (gc, worksheet) o (None, None) si falla.
@@ -120,29 +120,36 @@ def conectar_google_sheets(nombre_hoja: str) -> tuple:
         )
         gc = gspread.authorize(creds)
         print(f"✅ Conectado a Google Sheets")
-        
-        # Buscar o crear hoja
-        try:
+
+        if spreadsheet_id:
+            sh = gc.open_by_key(spreadsheet_id)
+            print(f"✅ Hoja con ID '{spreadsheet_id}' abierta")
+        else:
             sh = gc.open(nombre_hoja)
             print(f"✅ Hoja '{nombre_hoja}' abierta")
-        except gspread.SpreadsheetNotFound:
-            sh = gc.create(nombre_hoja)
-            print(f"✅ Hoja '{nombre_hoja}' creada")
         
         # Acceder a la primera hoja de trabajo
         ws = sh.sheet1
         return gc, ws
+
+    except gspread.SpreadsheetNotFound:
+        print("❌ No se encontró la hoja. Créala en tu Google Drive y compártela con la cuenta de servicio.")
+        return None, None
     
     except Exception as e:
         print(f"❌ Error conectando a Google Sheets: {e}")
         return None, None
 
 
-def exportar_a_google_sheets(df_analisis: pd.DataFrame, nombre_hoja: str = "Bot Binance - Análisis"):
+def exportar_a_google_sheets(
+    df_analisis: pd.DataFrame,
+    nombre_hoja: str = "Bot Binance - Análisis",
+    spreadsheet_id: str | None = None,
+):
     """
     Exporta el análisis a una hoja de Google Sheets.
     """
-    gc, ws = conectar_google_sheets(nombre_hoja)
+    gc, ws = conectar_google_sheets(nombre_hoja, spreadsheet_id)
     if gc is None or ws is None:
         print("⚠️  No se pudo exportar a Google Sheets. Guardando solo localmente.")
         return False
@@ -233,6 +240,10 @@ def main():
         "--nombre-hoja", type=str, default="Bot Binance - Análisis",
         help="Nombre de la hoja de Google Sheets (default: 'Bot Binance - Análisis')"
     )
+    parser.add_argument(
+        "--spreadsheet-id", type=str, default=None,
+        help="ID de una hoja existente de Google Sheets ya compartida con la cuenta de servicio"
+    )
     
     args = parser.parse_args()
     
@@ -259,7 +270,7 @@ def main():
     
     # Exportar a Google Sheets si se solicita
     if args.google_sheets:
-        exportar_a_google_sheets(df_analisis, args.nombre_hoja)
+        exportar_a_google_sheets(df_analisis, args.nombre_hoja, args.spreadsheet_id)
     
     print("✅ Análisis completado")
 
