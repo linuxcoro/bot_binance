@@ -21,9 +21,10 @@ from tabulate import tabulate
 # ── Configuración ──────────────────────────────────────────────
 URL_BOTS = "https://www.binance.com/es-LA/trading-bots"
 WAIT_PAGE_LOAD = 8        # segundos para espera inicial
+
 WAIT_BETWEEN_CLICKS = 3   # segundos entre clic en cada bot
 HEADLESS = True            # True para oculto, False para ver el navegador
-HISTORIAL_CSV = Path(__file__).parent / "historial_bots.csv"
+HISTORIAL_CSV = Path(__file__).parent / "data" / "historial_bots.csv"
 
 
 def parse_args():
