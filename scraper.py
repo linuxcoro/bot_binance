@@ -24,7 +24,9 @@ WAIT_PAGE_LOAD = 8        # segundos para espera inicial
 
 WAIT_BETWEEN_CLICKS = 3   # segundos entre clic en cada bot
 HEADLESS = True            # True para oculto, False para ver el navegador
-HISTORIAL_CSV = Path(__file__).parent / "data" / "historial_bots.csv"
+DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
+HISTORIAL_CSV = DATA_DIR / "historial_bots.csv"
 
 
 def parse_args():
