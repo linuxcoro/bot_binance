@@ -875,7 +875,7 @@ def mostrar_resultados(df: pd.DataFrame, titulo: str = ""):
         return
 
     # Columnas visibles en orden fijo, strategy_id primero
-    columnas_orden = ["strategy_id", "par", "direccion", "roi", "pnl", "duracion", "inversion_min", "copias", "Δ copias"]
+    columnas_orden = ["strategy_id", "par", "direccion", "roi", "pnl", "duracion", "inversion_min", "copias"]
     cols_visibles = [c for c in columnas_orden if c in df.columns]
 
     df_mostrar = df[cols_visibles] if cols_visibles else df
@@ -949,8 +949,8 @@ def calcular_delta_copias(df_actual: pd.DataFrame, df_anterior: pd.DataFrame) ->
         except Exception:
             return ""
 
-    df["Δ copias"] = df.apply(_calcular, axis=1)
-    df = df.drop(columns=["_copias_ant"], errors="ignore")
+    # Si no quieres la columna 'Δ copias', simplemente no la agregues ni la devuelvas
+    df = df.drop(columns=["_copias_ant", "Δ copias"], errors="ignore")
     return df
 
 
