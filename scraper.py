@@ -961,8 +961,6 @@ async def main():
         await cambiar_a_vista_lista(page)
 
         # Paso 4: Scroll ligero para asegurar carga inicial
-        print("📜 Carga inicial de bots...")
-        for _ in range(2):
             await page.evaluate("window.scrollBy(0, 700)")
             await page.wait_for_timeout(700)
 
