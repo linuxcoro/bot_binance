@@ -158,12 +158,15 @@ def exportar_a_google_sheets(
         # Limpiar la hoja existente
         ws.clear()
         print("✅ Hoja limpiada")
-        
-        # Convertir DataFrame a lista de listas (incluyendo headers)
-        datos = [df_analisis.columns.tolist()] + df_analisis.values.tolist()
-        
+
+        df_exportar = df_analisis.copy()
+        for columna in df_exportar.select_dtypes(include=["datetime64[ns]", "datetimetz"]).columns:
+            df_exportar[columna] = df_exportar[columna].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        datos = [df_exportar.columns.tolist()] + df_exportar.astype(object).where(pd.notna(df_exportar), "").values.tolist()
+
         # Actualizar valores en la hoja
-        ws.update("A1", datos)
+        ws.update(range_name="A1", values=datos)
         print(f"✅ {len(df_analisis)} registros exportados a Google Sheets")
         
         return True
