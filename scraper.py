@@ -933,8 +933,6 @@ async def main():
         print(f"   Filtro copias mín: ≥ {args.copias_min}")
     if args.copias_max is not None:
         print(f"   Filtro copias máx: ≤ {args.copias_max}")
-    if args.solo_cambios:
-        print("   Mostrando: solo bots con cambios en copias")
     print()
 
     respuestas_api = []
