@@ -1,3 +1,6 @@
 # Ignorar la carpeta data y todos los archivos CSV
 /data/
 *.csv
+
+# Ignorar archivos JSON (credenciales)
+*.json

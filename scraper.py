@@ -55,10 +55,6 @@ def parse_args():
         "--paginas-max", type=int, default=50,
         help="Máximo de páginas a recorrer (incluye la página actual). Ej: 50"
     )
-    parser.add_argument(
-        "--solo-cambios", action="store_true",
-        help="Mostrar solo bots cuyo número de copias haya cambiado respecto al snapshot anterior"
-    )
     return parser.parse_args()
 
 
@@ -910,48 +906,15 @@ def guardar_snapshot(df: pd.DataFrame, path: Path):
     if df.empty:
         return
     df_guardar = df.copy()
-    df_guardar["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    df_guardar = df_guardar.drop(columns=["Δ copias"], errors="ignore")
+    now = datetime.now()
+    df_guardar["fecha"] = now.strftime("%Y-%m-%d")
+    df_guardar["timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S")
     escribir_header = not path.exists()
     df_guardar.to_csv(path, mode="a", index=False, header=escribir_header)
     print(f"💾 Snapshot guardado en {path.name} ({len(df_guardar)} bots, {df_guardar['timestamp'].iloc[0]})")
 
 
-def calcular_delta_copias(df_actual: pd.DataFrame, df_anterior: pd.DataFrame) -> pd.DataFrame:
-    """Agrega columna 'Δ copias' comparando con el snapshot anterior."""
-    df = df_actual.copy()
-    df["strategy_id"] = df["strategy_id"].astype(str)
 
-    if df_anterior.empty or "copias" not in df_anterior.columns:
-        df["Δ copias"] = "nuevo"
-        return df
-
-    df_anterior = df_anterior[["strategy_id", "copias"]].copy()
-    df_anterior["strategy_id"] = df_anterior["strategy_id"].astype(str)
-    df_anterior = df_anterior.rename(columns={"copias": "_copias_ant"})
-
-    df = df.merge(df_anterior, on="strategy_id", how="left")
-
-    def _calcular(row):
-        try:
-            actual = int(float(str(row["copias"]).replace(",", "").strip()))
-            anterior = row["_copias_ant"]
-            if pd.isna(anterior):
-                return "nuevo"
-            anterior = int(float(str(anterior).replace(",", "").strip()))
-            delta = actual - anterior
-            if delta > 0:
-                return f"+{delta}"
-            elif delta < 0:
-                return str(delta)
-            else:
-                return "0"
-        except Exception:
-            return ""
-
-    # Si no quieres la columna 'Δ copias', simplemente no la agregues ni la devuelvas
-    df = df.drop(columns=["_copias_ant", "Δ copias"], errors="ignore")
-    return df
 
 
 async def main():
@@ -1034,21 +997,11 @@ async def main():
         df_api = filtrar_resultados(df_api, args)
 
         if not df_api.empty:
-            # Paso 8: Comparar con historial y calcular delta de copias
-            df_anterior = cargar_snapshot_anterior(HISTORIAL_CSV)
-            df_api = calcular_delta_copias(df_api, df_anterior)
-
-            # Paso 9: Guardar snapshot actual
+            # Paso 8: Guardar snapshot actual
             guardar_snapshot(df_api, HISTORIAL_CSV)
 
-            # Paso 10: Filtrar solo cambios si se solicitó
-            if args.solo_cambios:
-                df_mostrar = df_api[df_api["Δ copias"].astype(str).ne("0") & df_api["Δ copias"].astype(str).ne("")]
-                print(f"🔍 Filtro --solo-cambios: {len(df_mostrar)} bots con cambios en copias")
-            else:
-                df_mostrar = df_api
-
-            mostrar_resultados(df_mostrar, "📊 MERCADO DE BOTS — GRID DE FUTUROS (1-7 días)")
+            # Paso 9: Mostrar resultados
+            mostrar_resultados(df_api, "📊 MERCADO DE BOTS — GRID DE FUTUROS (1-7 días)")
         else:
             print("⚠️  No se capturaron datos de la API")
 
