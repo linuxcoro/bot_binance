@@ -117,10 +117,16 @@ def construir_mensaje_mejores_bots(df_top: pd.DataFrame) -> str:
     ]
 
     for i, (_, row) in enumerate(df_top.iterrows(), start=1):
+        cambio = int(row['variacion_copias'])
+        cambio_str = f"+{cambio}" if cambio > 0 else str(cambio)
         lineas.append(
-            f"{i}. <b>{row['par']}</b> | ID: <code>{row['strategy_id']}</code>\n"
-            f"   Estado: {row['estado']} | Copias: {int(row['copias_final'])}\n"
-            f"   Δ Copias: {int(row['variacion_copias'])} | Score: {row['score_total']:.3f}"
+            f"{i}. <b>{row['par']}</b>\n"
+            f"ID: <code>{row['strategy_id']}</code>\n"
+            f"Estado: <b>{row['estado']}</b>\n"
+            f"Copias actuales: <b>{int(row['copias_final'])}</b>\n"
+            f"Cambio de copias: <b>{cambio_str}</b>\n"
+            f"Score: <b>{row['score_total']:.3f}</b>\n"
+            f"──────────────"
         )
 
     return "\n".join(lineas)
